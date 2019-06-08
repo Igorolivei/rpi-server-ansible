@@ -1,0 +1,149 @@
+- name: Install gitea
+  hosts: raspberry_pi
+  become: yes
+
+  tasks:
+  - name: create gitea group
+    group:
+      name: gitea
+      state: present
+
+  - name: create gitea user
+    user:
+      name: gitea
+      group: gitea
+      home: /home/gitea
+      comment: Gitea
+      system: yes
+      shell: /bin/bash
+
+  - name: Create gitea dir on disk
+    file:
+      path: '{{ item }}'
+      state: directory
+      owner: gitea
+      group: gitea
+      mode: 0750
+    with_items:
+      - /mnt/disk/gitea_repositories
+      - /mnt/disk/gitea_lfs
+
+  - name: Create gitea etc dir
+    file:
+      path: /etc/gitea
+      state: directory
+      owner: root
+      group: gitea
+      mode: 0770
+
+  - name: Create gitea directories
+    file:
+      path: '{{ item }}'
+      state: directory
+      owner: gitea
+      group: gitea
+    with_items:
+      - /var/lib/gitea/custom
+      - /var/lib/gitea/public
+
+  - name: Create gitea 0750 directories
+    file:
+      path: '{{ item }}'
+      state: directory
+      owner: gitea
+      group: gitea
+      mode: 0750
+    with_items:
+      - /var/lib/gitea/indexers
+      - /var/lib/gitea/log
+      - /var/lib/gitea/data
+
+  - name: Create symlink of repositories to data dir on mounted disk
+    file:
+      src: /mnt/disk/gitea_repositories
+      dest: /var/lib/gitea/data/repositories
+      state: link
+      owner: gitea
+      group: gitea
+
+  - name: Create symlink of lfs to data dir on mounted disk
+    file:
+      src: /mnt/disk/gitea_lfs
+      dest: /var/lib/gitea/data/lfs
+      state: link
+      owner: gitea
+      group: gitea
+
+  - name: Install git
+    apt:
+      name: git
+      state: present
+
+  - name: Create 'gitea' Database
+    mysql_db:
+      name: gitea
+      state: present
+    notify:
+      - Change password of gitea database user
+
+  - name: Download gitea binary
+    get_url:
+      url: https://dl.gitea.io/gitea/1.7.6/gitea-1.7.6-linux-arm-7
+      dest: /usr/local/bin/gitea
+      owner: gitea
+      group: gitea
+      mode: 0755
+
+  - name: Copy gitea service file
+    template:
+      src: gitea-service.j2
+      dest: /etc/systemd/system/gitea.service
+    notify:
+      - Start service gitea
+      - Add first lines to app.ini
+
+  - name: Copy gitea nginx config
+    template:
+      src: nginx-conf.j2
+      dest: /etc/nginx/conf.d/rpi-server
+    notify:
+      - Enable nginx config
+      - Restart nginx
+
+  handlers:
+  - name: Change password of gitea database user
+    command: >
+      mysql -u root --execute="GRANT ALL ON gitea.* TO 'gitea'@'localhost' IDENTIFIED BY '{{gitea_db_password}}' WITH GRANT OPTION; FLUSH PRIVILEGES;"
+
+  - name: Start service gitea
+    systemd:
+      name: gitea
+      state: restarted
+      daemon_reload: yes
+      enabled: yes
+
+  - name: Add first lines to app.ini
+    lineinfile:
+      path: /etc/gitea/app.ini
+      line: '{{item}}'
+    with_items:
+      - '[server]'
+      - 'ROOT_URL=http://{{hostname}}/gitea/'
+      - 'LFS_CONTENT_PATH=/var/lib/gitea/data/lfs'
+      - '[repository]'
+      - 'ROOT=/var/lib/gitea/data/repositories'
+    notify:
+      - Start service gitea
+
+  - name: Enable nginx config
+    file:
+      src: /etc/nginx/conf.d/rpi-server
+      dest: /etc/nginx/sites-enabled/rpi-server
+      state: link
+      owner: www-data
+      group: www-data
+
+  - name: Restart nginx
+    systemd:
+      name: nginx
+      state: reloaded

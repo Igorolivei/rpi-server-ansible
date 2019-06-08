@@ -1,0 +1,11 @@
+[raspberry_pi:vars]
+ansible_user=pi
+ansible_python_interpreter=/usr/bin/python3
+
+disk=/dev/sda
+owncloud_db_password=0wnCl0ud
+gitea_db_password=g1te4
+hostname=192.168.15.18
+
+[raspberry_pi]
+192.168.15.18

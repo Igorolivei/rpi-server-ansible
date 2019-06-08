@@ -1,0 +1,21 @@
+- name: Post install config
+  hosts: raspberry-pi
+
+  tasks:
+    - name: Install firewalld
+      apt:
+        name: '{{item}}'
+        state: present
+      with_items:
+        - firewalld
+
+    - name: Manage firewalld services
+      firewalld:
+        service: '{{item}}'
+        permanent: yes
+        state: enabled
+        immediate: yes
+      with_items:
+        - ssh
+        - http
+        - https

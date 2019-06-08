@@ -1,0 +1,77 @@
+- name: Install ownCloud
+  hosts: raspberry_pi
+  become: yes
+
+  tasks:
+  - name: Create ownCloud dir
+    file:
+      path: /var/www/owncloud
+      state: directory
+
+  - name: Create data dir on disk
+    file:
+      path: /mnt/disk/owncloud_data
+      state: directory
+      owner: www-data
+      group: www-data
+
+  - name: Create symlink to data dir on mounted disk
+    file:
+      src: /mnt/disk/owncloud_data
+      dest: /var/www/owncloud/data
+      state: link
+      owner: www-data
+      group: www-data
+
+  - name: Install required packages for ownCloud
+    apt:
+      name: [openssl, php-imagick, php7.0-common, php7.0-cgi, php7.0-curl, php7.0-fpm, php7.0-gd, php7.0-imap, php7.0-intl, php7.0-json, php7.0-ldap, php7.0-mbstring, php7.0-mcrypt, php7.0-mysql, php7.0-pgsql, php-smbclient, php-ssh2, php7.0-sqlite3, php7.0-xml, php7.0-zip, python3-mysqldb, python3-dev]
+      state: present
+
+  - name: Add apt-key from ownCloud
+    apt_key:
+      url: https://download.owncloud.org/download/repositories/10.2.0/Debian_9.0/Release.key
+      state: present
+
+  - name: Add ownCloud repository
+    apt_repository:
+      repo: deb https://download.owncloud.org/download/repositories/10.2.0/Debian_9.0/ /
+      state: present
+      update_cache: yes
+
+  - name: Install / Download ownCloud
+    apt:
+      name: owncloud-files
+
+  - name: Create 'owncloud' Database
+    mysql_db:
+      name: owncloud
+      state: present
+    notify:
+      - Change password of owncloud database user
+
+  - name: Copy owncloud nginx config
+    template:
+      src: nginx-conf.j2
+      dest: /etc/nginx/conf.d/rpi-server
+    notify:
+      - Enable nginx config
+      - Restart nginx
+
+  handlers:
+  - name: Change password of owncloud database user
+    command: >
+      mysql -u root --execute="GRANT ALL ON owncloud.* to 'owncloud'@'localhost' IDENTIFIED BY '{{owncloud_db_password}}'; FLUSH PRIVILEGES;"
+
+  - name: Enable nginx config
+    file:
+      src: /etc/nginx/conf.d/rpi-server
+      dest: /etc/nginx/sites-enabled/rpi-server
+      state: link
+      owner: www-data
+      group: www-data
+
+  - name: Restart nginx
+    systemd:
+      name: nginx
+      state: reloaded

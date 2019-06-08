@@ -1,0 +1,85 @@
+- name: Prepare machine
+  hosts: raspberry_pi
+  become: yes
+
+  tasks:
+  - name: Create mount dir
+    file:
+      path: /mnt/disk
+      state: directory
+
+  - name: Format volume
+    filesystem:
+      fstype: ext4
+      dev: '{{disk}}'
+
+  - name: Create mountpoint
+    mount:
+      path: /mnt/disk
+      src: '{{disk}}'
+      fstype: ext4
+      state: mounted
+
+  - name: Upgrade all packages to the latest version
+    apt:
+      name: '*'
+      state: latest
+      update_cache: yes
+      force_apt_get: true
+    notify:
+      - Reboot and wait to continue
+
+  - meta: flush_handlers
+
+  - name: Install packages
+    apt:
+      name: [dirmngr, apt-transport-https, net-tools, ntp, nginx, firewalld]
+      state: present
+
+  - name: Remove default nginx config
+    file:
+      dest: /etc/nginx/sites-enabled/default
+      state: absent
+
+  - name: Set timezone
+    timezone:
+      name: America/Sao_Paulo
+
+  - name: Ensure NTP is running and enabled as configured.
+    service:
+      name: ntp
+      state: started
+      enabled: true
+
+  - name: Add apt-key from MariaDB
+    apt_key:
+      keyserver: hkp://keyserver.ubuntu.com:80
+      id: '0xF1656F24C74CD1D8'
+      state: present
+
+  - name: Add MariaDB 10.3 repository
+    apt_repository:
+      repo: deb http://sfo1.mirrors.digitalocean.com/mariadb/repo/10.3/debian/ stretch main
+      state: present
+      update_cache: yes
+
+  - name: Install MariaDB
+    apt:
+      name: mariadb-server
+      state: present
+
+  - name: Manage firewalld services
+    firewalld:
+      service: '{{item}}'
+      permanent: yes
+      state: enabled
+      immediate: yes
+    with_items:
+      - ssh
+      - http
+      - https
+
+  handlers:
+  - name: Reboot and wait to continue
+    reboot:
+      reboot_timeout: 180
